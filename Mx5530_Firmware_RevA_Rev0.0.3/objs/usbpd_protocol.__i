@@ -1,0 +1,1 @@
+"src\modules\usb_pd\usbpd\usbpd_protocol.c" OPTIMIZE (8,SIZE) BROWSE INCDIR(./src/include;./src/drivers;./src/lib;./src/modules;./src/events;./src) DEBUG OBJECTEXTEND PRINT(.\objs\usbpd_protocol.lst) TABS (2) OBJECT(.\objs\usbpd_protocol.obj)

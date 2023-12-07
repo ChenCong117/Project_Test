@@ -1,0 +1,99 @@
+C51 COMPILER V9.56.0.0   SCHED                                                             07/10/2023 15:49:37 PAGE 1   
+
+
+C51 COMPILER V9.56.0.0, COMPILATION OF MODULE SCHED
+OBJECT MODULE PLACED IN .\objs\sched.obj
+COMPILER INVOKED BY: D:\Keil\C51\BIN\C51.EXE src\application\sched.c OPTIMIZE(8,SIZE) BROWSE INCDIR(./src/include;./src/
+                    -drivers;./src/lib;./src/modules;./src/events;./src) DEBUG OBJECTEXTEND PRINT(.\objs\sched.lst) TABS(2) OBJECT(.\objs\sch
+                    -ed.obj)
+
+line level    source
+
+   1          
+   2          #include "sched.h"
+   3          #include "event.h"
+   4          
+   5          #if (IMOD_SCHED_OPEN == YES)
+   6          
+   7          //function modules:
+   8          #if (FMOD_USB_PD_OPEN == YES)
+   9          #include "usb_pd/usbpd/usb_pd.h"
+  10          #endif
+  11          
+  12          /**
+  13           * define some varaibles to trace program running...
+  14           */
+  15          uint8 xdata g_evt_des_not_enough    _at_  (GENMEM_REG_BASE + 0x0004);
+  16          static uint8 xdata f_running_flag   _at_  (GENMEM_REG_BASE + 0x0005);
+  17          static uint8 xdata f_last_evt_type    _at_  (GENMEM_REG_BASE + 0x0006);
+  18          static uint8 xdata f_last_evt_param   _at_  (GENMEM_REG_BASE + 0x0007);
+  19          
+  20          //trace event number for each module: 
+  21          static uint8 xdata usbpd_event_num    _at_  (GENMEM_REG_BASE + 0x0008); 
+  22          
+  23          void scheduler(void)
+  24          {
+  25   1        struct event_des evt_des;
+  26   1        
+  27   1        usbpd_event_num = 0;
+  28   1          
+  29   1        //loop forever...
+  30   1        while(1)
+  31   1        {
+  32   2          //trace if running...
+  33   2          f_running_flag++;
+  34   2      
+  35   2          //give chance to call back...
+  36   2          #if (CB_FUNC_ENABLE == YES)
+                  traverse_call_back_list();
+                  #endif
+  39   2      
+  40   2          //check event...
+  41   2          if(!event_pending(&evt_des))
+  42   2            continue;
+  43   2          
+  44   2          //trace event...
+  45   2          f_last_evt_type = evt_des.type;
+  46   2          f_last_evt_param = evt_des.param;
+  47   2      
+  48   2          //event pending! process it:
+  49   2          if(evt_des.type >= EVT_UN_DEF)
+  50   2            continue;
+  51   2      
+  52   2          // usb pd:
+  53   2          #if (FMOD_USB_PD_OPEN == YES)
+C51 COMPILER V9.56.0.0   SCHED                                                             07/10/2023 15:49:37 PAGE 2   
+
+  54   2          else if(evt_des.type == EVT_USB_PD)
+  55   2          {
+  56   3            usbpd_event_num++;
+  57   3            usb_pd_process(evt_des.param);
+  58   3          }
+  59   2          #endif
+  60   2      
+  61   2          else
+  62   2          {
+  63   3            //do nothing...
+  64   3          }
+  65   2        }
+  66   1      }
+  67          
+  68          
+  69          /**************************** end *****************************/
+  70          #endif
+  71          
+  72          
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =     59    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----       5
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

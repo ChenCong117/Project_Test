@@ -1,0 +1,1 @@
+"src\drivers\power\power.c" OPTIMIZE (8,SIZE) BROWSE INCDIR(./src/include;./src/drivers;./src/lib;./src/modules;./src/events;./src) DEBUG OBJECTEXTEND PRINT(.\objs\power.lst) TABS (2) OBJECT(.\objs\power.obj)

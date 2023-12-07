@@ -1,0 +1,1 @@
+"src\drivers\sw_iic\sw_iic.c" OPTIMIZE (8,SIZE) BROWSE INCDIR(./src/include;./src/drivers;./src/lib;./src/modules;./src/events;./src) DEBUG OBJECTEXTEND PRINT(.\objs\sw_iic.lst) TABS (2) OBJECT(.\objs\sw_iic.obj)

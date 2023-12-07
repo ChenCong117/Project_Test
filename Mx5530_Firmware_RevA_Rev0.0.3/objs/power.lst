@@ -1,0 +1,224 @@
+C51 COMPILER V9.56.0.0   POWER                                                             07/10/2023 15:49:37 PAGE 1   
+
+
+C51 COMPILER V9.56.0.0, COMPILATION OF MODULE POWER
+OBJECT MODULE PLACED IN .\objs\power.obj
+COMPILER INVOKED BY: D:\Keil\C51\BIN\C51.EXE src\drivers\power\power.c OPTIMIZE(8,SIZE) BROWSE INCDIR(./src/include;./sr
+                    -c/drivers;./src/lib;./src/modules;./src/events;./src) DEBUG OBJECTEXTEND PRINT(.\objs\power.lst) TABS(2) OBJECT(.\objs\p
+                    -ower.obj)
+
+line level    source
+
+   1          
+   2          #include "power.h"
+   3          
+   4          
+   5          // power module init:
+   6          void power_init(void)
+   7          {
+   8   1        // enable dac control: 
+   9   1        //regmap10(0x04) = 0x83; // dac_fw_en = 1, dac_current_en = 1, dac_voltage_en = 1
+  10   1        // enable adc control:
+  11   1        //regmap10(0x07) = 0x01; // adc_en = 1
+  12   1        //regmap10(0x06) = 0x00; // reset all...
+  13   1      }
+  14          
+  15          //////////////////////////////////////////// DAC //////////////////////////////////////////////////
+  16          
+  17          // set voltage by dac...
+  18          // 12-bit dac: 0x000 -> 0V, 0xFFF -> 2.5V 
+  19          // range: 0.3~2.2V -> 3~22V, so the formular is: 0xFFF * voltage / 25
+  20          // voltage_mV: 0~20V -> 0~20000mV
+  21          /*
+  22          void power_set_voltage(uint16 voltage_mV)
+  23          {  
+  24            uint32 value; 
+  25            // calcualte: 
+  26            value = ((uint32)voltage_mV << 12) / 25000; // "*0xFFF" -> "<<12"
+  27            // take action...
+  28            regmap10(0x01) = (value >> 0) & 0xFF; 
+  29            regmap10(0x02) = (value >> 8) & 0x0F; 
+  30          }
+  31          */
+  32          
+  33          // set current by dac...
+  34          // 8-bit dac: 0x00 -> 0V, 0xFF -> 2.5V 
+  35          // range: 0.4~2.4V -> 0~5A, so the formular is: (current / 5) * (2.4 - 0.4) + 0.4
+  36          // current_mA: 0~5A -> 0~5000mA 
+  37          /*
+  38          void power_set_current(uint16 current_mA)
+  39          {
+  40            uint32 vol_t; 
+  41            uint32 value;
+  42            // calculate: 
+  43            vol_t = (uint32)current_mA * 4 + 4000;  // in 0.1mV unit...
+  44            value = 0xFF * vol_t / 25000;
+  45            // take action...
+  46            regmap10(0x03) = value & 0xFF;
+  47          } 
+  48          */
+  49          
+  50          void power_set_voltage(uint16 voltage, uint8 pps_request)
+  51          {
+  52   1        if(pps_request)
+  53   1        {   
+C51 COMPILER V9.56.0.0   POWER                                                             07/10/2023 15:49:37 PAGE 2   
+
+  54   2          // pps unit: 20mV 
+  55   2          regmap0D(0x4A) = (voltage >> 8) & 0x07; // vout_pps[10:0] - 0D4A[2:0] - 0D4B[7:0]
+  56   2          regmap0D(0x4B) = (voltage >> 0) & 0xFF;
+  57   2          // control: 
+  58   2          regmap0D(0x48) |=  (1 << 5); // pps_request = 1
+  59   2          regmap0D(0x4A) |=  (1 << 7); // vout_pd_pps_rdy = 0 - > 1 
+  60   2          regmap0D(0x4A) &= ~(1 << 7);
+  61   2        }
+  62   1        else
+  63   1        {
+  64   2          // fix: unit: 50mV
+  65   2          regmap0D(0x49) = (voltage >> 0) & 0x7F;
+  66   2          // control: 
+  67   2          regmap0D(0x48) &= ~(1 << 5); // pps_request = 0
+  68   2          regmap0D(0x49) |=  (1 << 7); // vout_pd_rdy = 0 -> 1
+  69   2          regmap0D(0x49) &= ~(1 << 7);
+  70   2        }
+  71   1      } 
+  72          
+  73          void power_set_current(uint16 current, uint8 pps_request)
+  74          {
+  75   1        if(pps_request)
+  76   1        {
+  77   2          // pps: unit 50mA
+  78   2          regmap0D(0x4C) = (current >> 0) & 0x7F; 
+  79   2        }
+  80   1        else
+  81   1        {
+  82   2          // fix: unit 10mA
+  83   2          regmap0D(0x4D) = (current >> 8) & 0x03;   
+  84   2          regmap0D(0x4E) = (current >> 0) & 0xFF;   
+  85   2        }
+  86   1      }
+  87          
+  88          //////////////////////////////////////////////// ADC //////////////////////////////////////////////
+  89          
+  90          #define ADC_SEL_VOLTAGE     0
+  91          #define ADC_SEL_CURRENT     1
+  92          #define ADC_SEL_TEMPINT     2
+  93          #define ADC_SEL_TEMPEXT     3
+  94          /*
+  95          static uint16 _read_adc_value(uint8 sel)
+  96          {
+  97            uint16 value; 
+  98            // select target:
+  99            regmap10(0x07) &= 0xF1; // bit[3:1]
+ 100            regmap10(0x07) |= (sel & 7) << 1;   
+ 101            // wait adc sample ready:
+ 102            while((regmap11(0x02) & (1 << 4)) == 0)
+ 103            {
+ 104            }
+ 105            // ok:
+ 106            value = regmap11(0x02) & 0x0F; 
+ 107            value = (value << 4) | regmap11(0x01); 
+ 108            return value; 
+ 109          }
+ 110          */
+ 111          
+ 112          // get current voltage...
+ 113          // 12-bit dac: 0x000 -> 0V, 0xFFF -> 2.7V 
+ 114          // range: 0.3~2.2V -> 3~22V, so the formular is: voltage = value * 27000 / 0xFFF (mV)
+ 115          // voltage_mV: 0~20V -> 0~20000mV
+C51 COMPILER V9.56.0.0   POWER                                                             07/10/2023 15:49:37 PAGE 3   
+
+ 116          /*
+ 117          uint16 power_read_voltage(void)
+ 118          {
+ 119            uint16 value;
+ 120            uint16 vol_t; 
+ 121            // read adc:
+ 122            value = _read_adc_value(ADC_SEL_VOLTAGE); 
+ 123            // calculate: 
+ 124            vol_t = ((uint32)value * 27000) >> 12; //  "/0xFFF" -> ">>12"
+ 125            // in mV... 
+ 126            return vol_t; 
+ 127          }
+ 128          */
+ 129          /*
+ 130          uint16 power_read_voltage(void)
+ 131          {
+ 132            uint16 value; 
+ 133            value = regmap11(0x05) & 0x07; 
+ 134            value = (value << 8) | regmap11(0x04);
+ 135            return value; 
+ 136          }
+ 137          */
+ 138          // get current current...
+ 139          /*
+ 140          uint16 power_read_current(void)
+ 141          {
+ 142            uint16 value;
+ 143            uint16 vol_t; 
+ 144            uint16 cur_t; 
+ 145            // read adc:
+ 146            value = _read_adc_value(ADC_SEL_CURRENT); 
+ 147            // 1. calculate voltage:
+ 148            vol_t = ((uint32)value * 27000) >> 12; // "/0xFFF" -> ">>12"
+ 149            // 2. calculate current: current = (voltage - 4000) / 4000; 
+ 150            cur_t = (vol_t - 4000) / 4000; 
+ 151            // in mA...
+ 152            return cur_t; 
+ 153          }
+ 154          */
+ 155          /*
+ 156          uint8 power_read_current(void)
+ 157          {
+ 158            return regmap11(0x06); 
+ 159          }
+ 160          */
+ 161          // get extern temperature...
+ 162          // range: 0~170 -> -20~150
+ 163          /*
+ 164          uint8 power_read_temperature(uint8 is_external)
+ 165          {
+ 166            uint16 value;
+ 167            uint16 vol_t; 
+ 168            uint16 tem_t; 
+ 169            // read adc:
+ 170            value = _read_adc_value(is_external ? ADC_SEL_TEMPEXT : ADC_SEL_TEMPINT); 
+ 171            // 1. calculate voltage:
+ 172            vol_t = ((uint32)value * 27000) >> 12; // "/0xFFF" -> ">>12"  
+ 173            // 2. calculate temperature: temperature = (voltage - 600) / 10; 
+ 174            tem_t = (vol_t - 600) / 10; 
+ 175            // in range of (0 - 1700)...
+ 176            return tem_t & 0xFF; 
+ 177          }
+C51 COMPILER V9.56.0.0   POWER                                                             07/10/2023 15:49:37 PAGE 4   
+
+ 178          */
+ 179          /*
+ 180          uint8 power_read_temperature(uint8 is_external)
+ 181          {
+ 182            uint8 value; 
+ 183            if(is_external)
+ 184            {
+ 185              value = regmap11(0x03);
+ 186            }
+ 187            else
+ 188            {
+ 189              value = regmap11(0x02);
+ 190            }
+ 191            return value; 
+ 192          }
+ 193          */
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =     80    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

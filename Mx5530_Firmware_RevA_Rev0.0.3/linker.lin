@@ -1,0 +1,21 @@
+; Link control script for BL51, applied to CT391
+
+; ignore warning for uncalled segments
+DISABLEWARNING (16, 15)
+
+; DATA(128), IDATA(256)
+RAMSIZE(256)
+	
+; XRAM(2K: 4000H - 47FFH)
+XDATA(0x4000-0x47FF) 
+
+; CODE(12K: 0000H - 2FFFH)
+CODE(0x0000-0x2FFF
+	;?CO?TEST_MEMORY(0x4000)
+	)
+
+;CODE( 0X0000-0X3FFF, 
+;      ?PR?LOAD_TEST?TEST(0x2000),
+;	   ?PR?_BUBBLE?TEST,
+;	   ?CO?TEST
+;	 )

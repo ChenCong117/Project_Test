@@ -1,0 +1,1 @@
+"src\modules\usb_pd\usbpd\usbpd_policy.c" OPTIMIZE (8,SIZE) BROWSE INCDIR(./src/include;./src/drivers;./src/lib;./src/modules;./src/events;./src) DEBUG OBJECTEXTEND PRINT(.\objs\usbpd_policy.lst) TABS (2) OBJECT(.\objs\usbpd_policy.obj)

@@ -1,0 +1,141 @@
+C51 COMPILER V9.56.0.0   INTERRUPT                                                         07/10/2023 15:49:37 PAGE 1   
+
+
+C51 COMPILER V9.56.0.0, COMPILATION OF MODULE INTERRUPT
+OBJECT MODULE PLACED IN .\objs\interrupt.obj
+COMPILER INVOKED BY: D:\Keil\C51\BIN\C51.EXE src\lib\interrupt\interrupt.c OPTIMIZE(8,SIZE) BROWSE INCDIR(./src/include;
+                    -./src/drivers;./src/lib;./src/modules;./src/events;./src) DEBUG OBJECTEXTEND PRINT(.\objs\interrupt.lst) TABS(2) OBJECT(
+                    -.\objs\interrupt.obj)
+
+line level    source
+
+   1          
+   2          #include "interrupt.h"
+   3          #include "sw_iic/sw_iic.h"
+   4          #include "usb_pd/usbpd/usb_pd.h"
+   5          
+   6          #if (IMOD_INTERRUPT_OPEN == YES)
+   7          
+   8          #define INT_ENABLE()    do{EA=1;}while(0)
+   9          #define INT_DISABLE()   do{EA=0;}while(0)
+  10          
+  11          // register map:
+  12          static uint8 xdata reg_mcu_int0_raw_status  _at_  (INTCTRL_REG_BASE + 0x05);
+  13          static uint8 xdata reg_mcu_int1_raw_status  _at_  (INTCTRL_REG_BASE + 0x06);
+  14          static uint8 xdata reg_mcu_int0_status    _at_  (INTCTRL_REG_BASE + 0x07);
+  15          static uint8 xdata reg_mcu_int1_status    _at_  (INTCTRL_REG_BASE + 0x08);
+  16          static uint8 xdata reg_hif_int0_raw_status  _at_  (INTCTRL_REG_BASE + 0x09);
+  17          static uint8 xdata reg_hif_int1_raw_status  _at_  (INTCTRL_REG_BASE + 0x0A);
+  18          static uint8 xdata reg_hif_int0_status    _at_  (INTCTRL_REG_BASE + 0x0B);
+  19          static uint8 xdata reg_hif_int1_status    _at_  (INTCTRL_REG_BASE + 0x0C);
+  20          
+  21          static uint8 xdata reg_mcu_int0_mask    _at_  (INTCTRL_REG_BASE + 0x10);
+  22          static uint8 xdata reg_mcu_int1_mask    _at_  (INTCTRL_REG_BASE + 0x11);  
+  23          static uint8 xdata reg_hif_int0_mask    _at_  (INTCTRL_REG_BASE + 0x12);
+  24          static uint8 xdata reg_hif_int1_mask    _at_  (INTCTRL_REG_BASE + 0x13);
+  25             
+  26          void interrupt_init(void)
+  27          {
+  28   1        // MCU native interrupt control:
+  29   1        EA = 0;
+  30   1        ES = 0;
+  31   1        // open target interrupt:
+  32   1        EX0 = 1;
+  33   1        EX1 = 1;
+  34   1        ET0 = 1;
+  35   1        ET1 = 0;  
+  36   1        
+  37   1        // CT391 interrupt control: 1->masked, 0->open
+  38   1        reg_mcu_int0_mask = 0xFF;  
+  39   1        reg_mcu_int1_mask = 0xFF; 
+  40   1        reg_mcu_int0_mask &= ~(EX0_HOSTIF_INT0_ACT); // open hostif int0, always opened...
+  41   1        #if (FMOD_USB_PD_OPEN == YES)
+  42   1        reg_mcu_int1_mask &= ~(EX1_USB_TYPEC_ACT); // open usb type-c interrupt...
+  43   1        #endif
+  44   1      
+  45   1        // hostif interrupt control:
+  46   1        reg_hif_int0_mask = 0xFF;
+  47   1        reg_hif_int1_mask = 0xFF;
+  48   1        #if (DRV_SW_IIC_OPEN == YES)
+                //reg_hif_int0_mask &= ~(HIF_INT0_IICSW_OP_END);  // open sw_iic - we don't use interrupt but polling...
+                #endif
+  51   1        
+  52   1        // key gate:
+  53   1        EA = 1;   
+C51 COMPILER V9.56.0.0   INTERRUPT                                                         07/10/2023 15:49:37 PAGE 2   
+
+  54   1      }
+  55          
+  56          /**
+  57           * external interupt 0 isr:
+  58           */
+  59          void ex0_isr(void) interrupt INT_NUM_0_EX0
+  60          {
+  61   1        uint8 hif_status = 0;
+  62   1        uint8 status = reg_mcu_int0_status;
+  63   1      
+  64   1        // dispatch routines:
+  65   1      
+  66   1        // hostif need distinguish to details:
+  67   1        if(status & EX0_HOSTIF_INT0_ACT)
+  68   1        {
+  69   2          hif_status = reg_hif_int0_status;
+  70   2          // software iic:
+  71   2          #if (DRV_SW_IIC_OPEN == YES)
+                  if(hif_status & HIF_INT0_IICSW_OP_END)
+                    iic_isr();  
+                  #endif
+  75   2      
+  76   2          // clear:
+  77   2          reg_hif_int0_status = hif_status;
+  78   2        }
+  79   1        
+  80   1        // clear interrupt: will be done in each module isr, so NOT do it here...
+  81   1      }
+  82          
+  83          
+  84          /**
+  85           * external interrupt 1 isr:
+  86           */
+  87          void ex1_isr(void) interrupt INT_NUM_2_EX1
+  88          {
+  89   1        uint8 status = reg_mcu_int1_status;
+  90   1      
+  91   1        // usb_pd:
+  92   1        #if (FMOD_USB_PD_OPEN == YES)
+  93   1        if(status & EX1_USB_TYPEC_ACT)
+  94   1          usb_pd_isr1();
+  95   1        #endif
+  96   1      
+  97   1        // clear interrupt: will be done in each module isr, so NOT do it here...
+  98   1      }
+  99          
+ 100          #else // #if (IMOD_INTERRUPT_OPEN == YES)
+              
+              void ex0_isr(void) interrupt INT_NUM_0_EX0
+              {
+                // do nothing...
+              }
+              
+              void ex1_isr(void) interrupt INT_NUM_2_EX1
+              {
+                // do nothing...
+              }
+              
+              #endif 
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+C51 COMPILER V9.56.0.0   INTERRUPT                                                         07/10/2023 15:49:37 PAGE 3   
+
+   CODE SIZE        =    140    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

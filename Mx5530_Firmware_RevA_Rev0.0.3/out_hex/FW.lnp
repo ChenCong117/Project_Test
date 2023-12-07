@@ -1,0 +1,38 @@
+".\objs\main.obj",
+".\objs\STARTUP.obj",
+".\objs\sched.obj",
+".\objs\sw_iic.obj",
+".\objs\timer.obj",
+".\objs\power.obj",
+".\objs\interrupt.obj",
+".\objs\sw_delay.obj",
+".\objs\system.obj",
+".\objs\test_main.obj",
+".\objs\usb_pd.obj",
+".\objs\usbpd_policy.obj",
+".\objs\usbpd_protocol.obj",
+".\objs\callback.obj",
+".\objs\event_tiny.obj",
+".\objs\event.obj" 
+TO ".\objs\..\out_hex\FW"
+; Link control script for BL51, applied to CT391
+
+; ignore warning for uncalled segments
+DISABLEWARNING (16, 15)
+
+; DATA(128), IDATA(256)
+RAMSIZE(256)
+	
+; XRAM(2K: 4000H - 47FFH)
+XDATA(0x4000-0x47FF) 
+
+; CODE(12K: 0000H - 2FFFH)
+CODE(0x0000-0x2FFF
+	;?CO?TEST_MEMORY(0x4000)
+	)
+
+;CODE( 0X0000-0X3FFF, 
+;      ?PR?LOAD_TEST?TEST(0x2000),
+;	   ?PR?_BUBBLE?TEST,
+;	   ?CO?TEST
+;	 )

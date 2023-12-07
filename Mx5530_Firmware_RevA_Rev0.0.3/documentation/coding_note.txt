@@ -1,0 +1,60 @@
+Wrote by: Junfeng
+
+1. source code layout:
+	
+	<include>: all public system related head files.
+	
+	<drivers>: basic hardware module drivers. 
+	
+	<events>: interrupt/external command process.
+	
+	<modules>: functional modules library
+	
+	<lib>: assist module library
+	
+	<application>: functional code.
+	
+	<test>: test routines which is not to be used in release version.
+	
+2. project layout:
+	
+	<documentation>: any note, comments, limitation etc is to be placed here.
+	
+	<objs>: all object file, list files, etc, are placed here. 
+	
+	<out_hex>: output hex file by linker.
+	
+	<out_bin>: bin file by post_exe tool.
+	
+	<post_exe>: tool for converting hex to bin.
+	
+3. some requirement: 
+
+	2.1 Code in <modules> should be more independent.
+	
+	2.2 try to follow linux coding style, for example, function name is lower-case. 
+	
+	2.3 try to write detailed context for your code.
+	
+	2.4 when encounter problem of using Keil tool, send it out earlier, we could resolve it together. 
+	
+	2.5 Please use macro to turn on/off your code, especially for <test> folder.
+	
+	2.6 Any special note, comments is to be placed in <documentation>. You could create new files if needed. 
+	
+4. update code:
+
+	3.1 DO NOT modify the project code in server, you should develop on your locate copy. 
+	
+	3.2 when code need updated, please notify all of members, we modify it together, just as meeting. 
+
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	

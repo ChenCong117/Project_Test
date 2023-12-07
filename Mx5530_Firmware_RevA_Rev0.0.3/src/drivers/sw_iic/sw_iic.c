@@ -1,0 +1,279 @@
+
+#include "sw_iic.h"
+
+#if (DRV_SW_IIC_OPEN == YES)
+
+// iic master regmap: hostif page...
+static uint8_t xdata regmap[256]		_at_ 	(IICSW_REG_BASE);
+static uint8_t xdata target_select		_at_	(IICMTP_REG_BASE + 0x05);	 // bit1: 1->
+
+// IIC operation type...
+#define OFFSET_TYPE           	0x80
+#define RANDOM_READ 	      	0x40
+#define CURRENT_READ          	0x20
+#define RESTART               	0x10
+#define START                 	0x08
+#define STOP                  	0x04
+#define SEND              	  	0x02
+#define READ                  	0x01
+
+// Register define:
+#define REG_DATA_IN_BASE		0x05
+#define REG_CMD_CTRL			0x31
+#define REG_CMD_TYPE			0x32
+#define REG_DATA_LEN			0x33
+#define REG_DATA_OUT_BASE		0x38
+#define REG_OP_FINISH			0x27
+
+// variables:
+static uint8 idata g_iic_op_end = 0;
+
+// trigger command and wait for complete:
+static void _trigger_and_wait(void)
+{
+	//trigger:
+	regmap[REG_CMD_CTRL] = 0x01;
+	regmap[REG_CMD_CTRL] = 0x00;
+
+	//wait:
+	#if 1
+	//polling...
+	while((regmap[REG_OP_FINISH] & (1 << 1)) == 0)
+	{
+	}
+	#endif
+	#if 0
+	//interrupt...
+	while(g_iic_op_end == 0)
+	{
+	}
+	g_iic_op_end = 0;
+	#endif
+}
+											
+
+// iic interrupt isr routines, so pay more attention here...
+void iic_isr(void)
+{
+	// when this routine called, iic operation completes:
+	g_iic_op_end = 1;
+}
+
+
+// init iic to default setting: target = local, speed = 100K
+void iic_init(void)
+{
+	// 0x30: delay:
+	regmap[0x30] = 0x00;
+	// 0x31: delay_enable
+	regmap[0x31] = 0x00;
+	// 0x36: lfirst:
+	//regmap[0x36] = 0x00;
+	// 0x37: kdds:
+	regmap[0x37] = 0x00;
+}
+
+// prepare for read/write operation:
+void iic_prepare(uint8 target, uint8 speed)
+{
+	if(target == IIC_TGT_HDMIDDC)
+	{
+		target_select &= ~(1 << 1);	 // doc inverted - 2015.03.18
+	}
+	else
+	{
+		target_select |=  (1 << 1);
+	}
+
+	if(speed == IIC_SPEED_400K)
+	{
+		regmap[0x34] = 2;
+		regmap[0x35] = 21;
+		regmap[0x36] = 11;	// 50% duty cycle
+	}
+	else
+	{
+		regmap[0x34] = 9;
+		regmap[0x35] = 26;
+		regmap[0x36] = 13;	// 50% duty cycle
+	}
+}
+
+// puclic interface:
+void iic_start_send(uint8 byte)
+{
+	// data:
+	regmap[REG_DATA_OUT_BASE] = byte;
+   	// command:
+	regmap[REG_CMD_TYPE] = START | SEND;
+	regmap[REG_DATA_LEN] = 1;
+	// do it:
+	_trigger_and_wait();
+}
+
+void iic_restart_send(uint8 byte)
+{
+	// data:
+	regmap[REG_DATA_OUT_BASE] = byte;
+	// command:
+	regmap[REG_CMD_TYPE] = RESTART | SEND;
+	regmap[REG_DATA_LEN] = 1;
+	// do it:
+	_trigger_and_wait();	
+}
+
+// for read operation:
+uint8 iic_step_read(void)
+{
+	// command:
+	regmap[REG_CMD_TYPE] = READ;
+	regmap[REG_DATA_LEN] = 1;
+	// do it:
+	_trigger_and_wait();
+	// data:
+	return regmap[REG_DATA_IN_BASE];	
+}
+
+uint8 iic_final_read(void)
+{
+	// command:
+	regmap[REG_CMD_TYPE] = READ | STOP;
+	regmap[REG_DATA_LEN] = 1;
+	// do it:
+	_trigger_and_wait();
+	// data:
+	return regmap[REG_DATA_IN_BASE];	
+}
+
+// for write operation:
+void iic_step_send(uint8 byte)
+{
+	// data:
+	regmap[REG_DATA_OUT_BASE] = byte;
+	// command:
+	regmap[REG_CMD_TYPE] = SEND;
+	regmap[REG_DATA_LEN] = 1;
+	// do it:
+	_trigger_and_wait();
+}
+
+void iic_final_send(uint8 byte)
+{
+	// data:
+	regmap[REG_DATA_OUT_BASE] = byte;
+	// command:
+	regmap[REG_CMD_TYPE] = SEND | STOP;
+	regmap[REG_DATA_LEN] = 1;
+   	// do it:
+	_trigger_and_wait();
+}
+
+////////////////////////////////////////////// test function ////////////////////////////////////////
+#if (IIC_TEST_EN == YES)
+static uint8 xdata edid_buffer[128]		_at_	(GENMEM_REG_BASE + 0x0600);
+static uint8 xdata reg_buffer[8] _at_			(GENMEM_REG_BASE + 0x0680);
+void iic_test(void)
+{
+	uint8 i, sum;
+	uint8 len = 128;
+   	// change mode
+	iic_prepare(IIC_TGT_HDMIDDC, IIC_SPEED_100K);
+	// send device address      
+	iic_start_send(0x50 << 1);
+	// send offset
+	iic_step_send(0);
+ 	// start read
+  	iic_restart_send((0x50 << 1) | 0x01);
+	//*
+ 	// read 1 bytes each time
+	for(i=0; i<len; ++i)
+	{
+		if(i != len-1)
+			edid_buffer[i] = iic_step_read(); // read 
+		else
+			edid_buffer[i] = iic_final_read(); // read + stop
+	} 
+	//*/
+}
+#endif
+
+////// whole version //////
+#if (WHOLE_VERSION_SUPPORT == YES)
+void iic_whole_read(uint8 address, uint8 offset, uint8 *values, uint8 length)
+{
+	uint8 i;
+	// device address:
+	iic_start_send(address << 1);
+	// offset:
+	iic_step_send(offset);
+	// restart:
+	iic_restart_send((address << 1) | 0x01);
+	// read data:
+	for(i=0; i<length; ++i)
+	{
+		if(i == length - 1)
+			values[i] = iic_final_read();
+		else
+			values[i] = iic_step_read();
+	}		
+}
+
+void iic_whole_read2(uint8 address, uint16 offset, uint8 *values, uint8 length)
+{
+	uint8 i;
+	// device address:
+	iic_start_send(address << 1);
+	// offset high-byte:
+	iic_step_send(offset >> 8);
+	// offset low-byte:
+	iic_step_send(offset & 0xFF);
+	// restart:
+	iic_restart_send((address << 1) | 0x01);
+	// read data:
+	for(i=0; i<length; ++i)
+	{
+		if(i == length - 1)
+			values[i] = iic_final_read();
+		else
+			values[i] = iic_step_read();
+	}		
+}
+
+void iic_whole_send(uint8 address, uint8 offset, uint8 *values, uint8 length)
+{
+	uint8 i;
+	// device address:
+	iic_start_send(address);
+	// offset:
+	iic_step_send(offset);
+	// send data:
+	for(i=0; i<length; ++i)
+	{
+		if(i == length - 1)
+			iic_final_send(values[i]);
+		else
+			iic_step_send(values[i]);	
+	}
+}
+void iic_whole_send2(uint8 address, uint16 offset, uint8 *values, uint8 length)
+{
+	uint8 i;
+	// device address:
+	iic_start_send(address);
+	// offset high-byte:
+	iic_step_send(offset >> 8);
+	// offset low-byte:
+	iic_step_send(offset & 0xFF);
+	// send data:
+	for(i=0; i<length; ++i)
+	{
+		if(i == length - 1)
+			iic_final_send(values[i]);
+		else
+			iic_step_send(values[i]);	
+	}	
+}
+#endif
+
+
+#endif	

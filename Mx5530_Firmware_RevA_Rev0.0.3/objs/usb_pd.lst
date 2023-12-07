@@ -1,0 +1,475 @@
+C51 COMPILER V9.56.0.0   USB_PD                                                            07/10/2023 15:49:37 PAGE 1   
+
+
+C51 COMPILER V9.56.0.0, COMPILATION OF MODULE USB_PD
+OBJECT MODULE PLACED IN .\objs\usb_pd.obj
+COMPILER INVOKED BY: D:\Keil\C51\BIN\C51.EXE src\modules\usb_pd\usbpd\usb_pd.c OPTIMIZE(8,SIZE) BROWSE INCDIR(./src/incl
+                    -ude;./src/drivers;./src/lib;./src/modules;./src/events;./src) DEBUG OBJECTEXTEND PRINT(.\objs\usb_pd.lst) TABS(2) OBJECT
+                    -(.\objs\usb_pd.obj)
+
+line level    source
+
+   1          
+   2          #include "usb_pd.h"
+   3          #include "sw_delay/sw_delay.h"
+   4          #include "event.h"
+   5          #include "timer/timer.h"
+   6          
+   7          #if (FMOD_USB_PD_OPEN == YES)
+   8          #include "usbpd_protocol.h"
+   9          #include "usbpd_policy.h"
+  10          
+  11          // control if to reply goodcrc in isr...
+  12          #define REPLY_GOODCRC_IN_ISR      0   // set to 0 in default...
+  13          
+  14          // timer status:
+  15          static uint8 xdata usbpd_timer_bits[3];
+  16          
+  17          // event status:
+  18          static uint16 xdata usbpd_event_bits; 
+  19          
+  20          // public debug resgiers:
+  21          uint8 xdata g_usbpd_trace[16] _at_  (GENMEM_REG_BASE + 0x50); 
+  22           
+  23          // check attach status:
+  24          #define CC_VALID_Rd   1
+  25          #define CC_VALID_Ra   2
+  26          static void _check_cc_src_connection(uint8 bisr);  
+  27          
+  28          // if using hardware to detect cc voltage for connection detection, 
+  29          // we have to set this to update the debounce time, which in ms...
+  30          #define DET_PLUG_MS     50   // 100 - 200 in spec, but for improv compatibility...
+  31          #define DET_UNPLUG_MS   5  // 0 - 20 in spec
+  32          #define SET_SRC_DET_DEBOUNCE(ms) do{;}while(0)
+  33          
+  34          //////////////////////////////////////////////////////////////////////////////////////////////////////////
+             -/////  
+  35          
+  36          // attention: this routine will be called from system isr, so be careful...
+  37          void usb_pd_isr1(void)
+  38          {
+  39   1        uint8 data bmc_rx_status = regmap0B(0x01);
+  40   1        uint8 data bmc_tx_status = regmap0B(0x02);
+  41   1        uint8 data timer0_status = regmap0B(0x03);
+  42   1        uint8 data timer1_status = regmap0B(0x04);
+  43   1        uint8 data timer2_status = regmap0B(0x05); 
+  44   1        uint8 data cc_det_status = regmap0B(0x0C);
+  45   1      
+  46   1        ////////////////////// bmc rx interrupt //////////////////////////
+  47   1        if(bmc_rx_status & BIT_RX_RCV_MESSAGE)
+  48   1        {
+  49   2          // if policy is not ready, we no process the message...
+  50   2          if(current_connect_status & 0x80)
+  51   2          {
+  52   3            // judge if message valid:
+C51 COMPILER V9.56.0.0   USB_PD                                                            07/10/2023 15:49:37 PAGE 2   
+
+  53   3            if((regmap0B(0x21) & 0xC0) == 0x40)
+  54   3            {
+  55   4              // message received:
+  56   4              // update system status...
+  57   4              regmap10(0x0D) |= (1 << 0); // PD_WORK = 1
+  58   4              // check if GoodCRC message recieved:
+  59   4              if(!usbpd_check_goodcrc())
+  60   4              {
+  61   5                // we should start timer for 195us counter...but we set to 190us...
+  62   5                usbpd_us_timer_start(0, 190);
+  63   5                // reply goodcrc here...??? or in usbpd_message_reception()...
+  64   5                #if (REPLY_GOODCRC_IN_ISR == 1)
+                        if(usbpd_reply_goodcrc()) 
+                        #endif
+  67   5                {
+  68   6                  // register event for messages except GoodCRC...
+  69   6                  event_add_tail(1, EVT_USB_PD, PBIT_USBPD_PRLMSG_RECEIVED);
+  70   6                }  
+  71   5              }
+  72   4            }
+  73   3          }
+  74   2        }
+  75   1        if(bmc_rx_status & BIT_RX_RCV_HARDRST)
+  76   1        {
+  77   2          // protocol process:
+  78   2          usbpd_hardreset_received(); 
+  79   2          // if not connected, ignore it...
+  80   2          if(current_connect_status & 0x80)
+  81   2          {
+  82   3            // register event:
+  83   3            usb_pd_add_event(1, USBPD_EVT_HARDRST_RECEIVED); 
+  84   3          } 
+  85   2        }
+  86   1      
+  87   1        ////////////////////////// bmc tx interrupt //////////////////////////////
+  88   1        if(bmc_tx_status & BIT_TX_SEND_MESSAGE_DONE)
+  89   1        {
+  90   2          sig_send_message_done = 1; 
+  91   2        }
+  92   1        if(bmc_tx_status & BIT_TX_SEND_GOODCRC_DONE)
+  93   1        {
+  94   2          sig_send_goodcrc_done = 1;
+  95   2        }
+  96   1        if(bmc_tx_status & BIT_TX_SEND_HARDRST_DONE)
+  97   1        {
+  98   2          sig_send_hardrst_done = 1;
+  99   2        }
+ 100   1        if(bmc_tx_status & BIT_TX_MESSAGE_DISCARDED)
+ 101   1        {
+ 102   2          sig_message_discarded = 1;
+ 103   2        }
+ 104   1        if(bmc_tx_status & BIT_TX_GOODCRC_DISCARDED)
+ 105   1        {
+ 106   2          sig_goodcrc_discarded = 1;
+ 107   2        }
+ 108   1      
+ 109   1        /////////////////////////// cc voltage change //////////////////////////////
+ 110   1        if(cc_det_status & (BIT_CC1_VOL_CHG_CCDB | BIT_CC2_VOL_CHG_CCDB))
+ 111   1        {
+ 112   2          // cc voltage change:
+ 113   2          _check_cc_src_connection(1); 
+ 114   2        }
+C51 COMPILER V9.56.0.0   USB_PD                                                            07/10/2023 15:49:37 PAGE 3   
+
+ 115   1      
+ 116   1        /////////////////////////// pe timer time out //////////////////////////////
+ 117   1        // pre-process: just set flag and not register event...
+ 118   1        // post-process:
+ 119   1        if(timer0_status || timer1_status || timer2_status)
+ 120   1        {
+ 121   2          usbpd_timer_bits[0] = timer0_status;
+ 122   2          usbpd_timer_bits[1] = timer1_status;
+ 123   2          usbpd_timer_bits[2] = timer2_status;
+ 124   2          // register event:
+ 125   2          event_add_tail(1, EVT_USB_PD, PBIT_USBPD_PETMR_PENDING);
+ 126   2        }
+ 127   1        
+ 128   1        // clear interupt:
+ 129   1        regmap0B(0x01) = bmc_rx_status;
+ 130   1        regmap0B(0x02) = bmc_tx_status; 
+ 131   1        regmap0B(0x03) = timer0_status; 
+ 132   1        regmap0B(0x04) = timer1_status;
+ 133   1        regmap0B(0x05) = timer2_status; 
+ 134   1        regmap0B(0x0C) = cc_det_status;   
+ 135   1      }
+ 136          
+ 137          ////////////////////////////////////// init routine /////////////////////////////////////////
+ 138          
+ 139          static void _hardware_init(void)
+ 140          {
+ 141   1        // add hardware init here...
+ 142   1      }
+ 143          
+ 144          void usb_pd_init(void)
+ 145          {
+ 146   1        // for debug trace:
+ 147   1        memset(g_usbpd_trace, 0, 16); 
+ 148   1      
+ 149   1        // clock gate: enable at first, then hardware start work...
+ 150   1        regmap0D(0x01) = 0x00;
+ 151   1        // detect clock gate:
+ 152   1        regmap0D(0x60) = 0x00; 
+ 153   1        regmap0D(0x61) |= (1 << 0); // CC_DET_EN = 1
+ 154   1      
+ 155   1        // clear previous interrupt status:
+ 156   1        regmap0B(0x01) = 0xFF;
+ 157   1        regmap0B(0x02) = 0xFF;
+ 158   1        regmap0B(0x03) = 0xFF; 
+ 159   1        regmap0B(0x04) = 0xFF;
+ 160   1        regmap0B(0x05) = 0xFF; 
+ 161   1        regmap0B(0x06) = 0xFF;
+ 162   1        regmap0B(0x0D) = 0xFF;
+ 163   1      
+ 164   1        // interrupt initialize..
+ 165   1        // bmc_rx:
+ 166   1        regmap0D(0x3F) = (BIT_RX_RCV_MESSAGE      |
+ 167   1                  BIT_RX_RCV_HARDRST      );
+ 168   1        // bmc_tx: 
+ 169   1        regmap0D(0x40) = (BIT_TX_SEND_MESSAGE_DONE    | 
+ 170   1                  BIT_TX_SEND_GOODCRC_DONE    |
+ 171   1                  BIT_TX_SEND_HARDRST_DONE    |
+ 172   1                  BIT_TX_MESSAGE_DISCARDED    |
+ 173   1                  BIT_TX_GOODCRC_DISCARDED    );
+ 174   1        // timers: 
+ 175   1        regmap0D(0x41) = 0xFF;
+ 176   1        regmap0D(0x42) = 0xFF;
+C51 COMPILER V9.56.0.0   USB_PD                                                            07/10/2023 15:49:37 PAGE 4   
+
+ 177   1        regmap0D(0x43) = 0xFF;
+ 178   1        regmap0D(0x44) = 0x00; 
+ 179   1        // vbus detect: 
+ 180   1        regmap0D(0x6D) = 0x00;
+ 181   1        // cc detect: 
+ 182   1        regmap0D(0x6E) = (BIT_CC1_VOL_CHG_CCDB |
+ 183   1                  BIT_CC2_VOL_CHG_CCDB );
+ 184   1      
+ 185   1        // hardware init...
+ 186   1        _hardware_init(); 
+ 187   1      
+ 188   1        // software init: 
+ 189   1        usbpd_timer_bits[0] = 0;
+ 190   1        usbpd_timer_bits[1] = 0;
+ 191   1        usbpd_timer_bits[2] = 0;
+ 192   1        usbpd_timer_bits[3] = 0;
+ 193   1        usbpd_event_bits = 0; 
+ 194   1      
+ 195   1        // protocol init:
+ 196   1        usbpd_protocol_init();
+ 197   1      
+ 198   1        // policy init routine:  // when we're source, we will send source capalibity message at start up...
+ 199   1        usbpd_policy_init();     
+ 200   1      
+ 201   1        // for fpga test only: we should wait really attached...
+ 202   1        /*
+ 203   1        while((regmap11(0x03) & (1 << 2)) == 0)
+ 204   1        {
+ 205   1        }
+ 206   1        */
+ 207   1      
+ 208   1        // check if attached at start up:
+ 209   1        _check_cc_src_connection(0); 
+ 210   1      
+ 211   1        // start check connect, for test... 
+ 212   1        //timer_polling_enable(1, TP_USBPD_CONNECTION); 
+ 213   1      }
+ 214          
+ 215          //process routine:
+ 216          void usb_pd_process(uint8 param)
+ 217          {
+ 218   1        // receive protocol message:
+ 219   1        if(param & PBIT_USBPD_PRLMSG_RECEIVED)
+ 220   1        {
+ 221   2          // do message reception (except goodcrc):
+ 222   2          #if (REPLY_GOODCRC_IN_ISR == 0)
+ 223   2          if(usbpd_reply_goodcrc())
+ 224   2          #endif 
+ 225   2          {
+ 226   3            usbpd_message_reception(); 
+ 227   3          }  
+ 228   2        }
+ 229   1        // message penging: need policy engine to process...
+ 230   1        if(param & PBIT_USBPD_PEMSG_PENDING)
+ 231   1        {
+ 232   2          // process general message in pending...  
+ 233   2          usbpd_message_process();
+ 234   2        }
+ 235   1        // timer timeout pending...
+ 236   1        if(param & PBIT_USBPD_PETMR_PENDING)
+ 237   1        {
+ 238   2          uint8 data i;
+C51 COMPILER V9.56.0.0   USB_PD                                                            07/10/2023 15:49:37 PAGE 5   
+
+ 239   2          for(i=0; i<3; ++i)
+ 240   2          {
+ 241   3            if(usbpd_timer_bits[i])
+ 242   3            {
+ 243   4              usbpd_timer_process(i, usbpd_timer_bits[i]);
+ 244   4              // clear previous status:
+ 245   4              usbpd_timer_bits[i] = 0; 
+ 246   4            }
+ 247   3          }
+ 248   2        }
+ 249   1        // event pending: need policy to process... 
+ 250   1        if(param & PBIT_USBPD_PEEVT_PENDING)
+ 251   1        {
+ 252   2          // event process:
+ 253   2          usbpd_event_process(usbpd_event_bits); 
+ 254   2          // don't forget clear with interrupt disabled:
+ 255   2          INT_DISABLE(); 
+ 256   2          usbpd_event_bits = 0; 
+ 257   2          INT_ENABLE(); 
+ 258   2        }
+ 259   1      }
+ 260          
+ 261          // policy event register:
+ 262          void usb_pd_add_event(uint8 bisr, uint16 evt_type)
+ 263          {
+ 264   1        usbpd_event_bits |= evt_type;
+ 265   1        event_add_tail(bisr, EVT_USB_PD, PBIT_USBPD_PEEVT_PENDING); 
+ 266   1      }
+ 267          
+ 268          ////////////////////////////////////////////////////////////////////////////////////
+ 269          
+ 270          // check detach by cc:
+ 271          void _check_cc_src_connection(uint8 bisr)
+ 272          {
+ 273   1        uint8 v;
+ 274   1          uint8 cc0_valid;
+ 275   1        uint8 cc1_valid;
+ 276   1      
+ 277   1        // first check if disconnected...
+ 278   1        /*
+ 279   1        if((regmap11(0x03) & (1 << 2)) == 0)
+ 280   1        {
+ 281   1          // disconnected...
+ 282   1          if(current_connect_status & 0x80)
+ 283   1          {
+ 284   1            // update flag:
+ 285   1            current_connect_status &= 0x7F; 
+ 286   1            // times:
+ 287   1            g_usbpd_trace[3]++;
+ 288   1            // update de-bounce time:
+ 289   1            SET_SRC_DET_DEBOUNCE(DET_PLUG_MS); 
+ 290   1            // notify:
+ 291   1            usb_pd_add_event(bisr, USBPD_EVT_PORT_DISCONNECTED);
+ 292   1          }
+ 293   1          // exit anyway...
+ 294   1          return; 
+ 295   1        }
+ 296   1        */  
+ 297   1      
+ 298   1        // now, it's confirmed connedted...
+ 299   1        // start check cc voltage:
+ 300   1        v = regmap0B(0x61);  
+C51 COMPILER V9.56.0.0   USB_PD                                                            07/10/2023 15:49:37 PAGE 6   
+
+ 301   1        switch((v >> 0) & 0x03)
+ 302   1        {
+ 303   2        case 1:
+ 304   2          cc0_valid = CC_VALID_Rd; 
+ 305   2          break;
+ 306   2        case 2: 
+ 307   2          cc0_valid = CC_VALID_Ra; 
+ 308   2          break; 
+ 309   2        default:
+ 310   2          cc0_valid = 0;
+ 311   2          break;
+ 312   2        }
+ 313   1        // 2. check cc2:
+ 314   1        switch((v >> 2) & 0x03)
+ 315   1        {
+ 316   2        case 1:
+ 317   2          cc1_valid = CC_VALID_Rd;
+ 318   2          break;
+ 319   2        case 2: 
+ 320   2          cc1_valid = CC_VALID_Ra; 
+ 321   2          break; 
+ 322   2        default:
+ 323   2          cc1_valid = 0;
+ 324   2          break;
+ 325   2        }
+ 326   1      
+ 327   1        // either connected:
+ 328   1        if((cc0_valid || cc1_valid) && (cc0_valid != cc1_valid))
+ 329   1        {
+ 330   2          // attached:
+ 331   2          if((current_connect_status & 0x80) == 0)
+ 332   2          {
+ 333   3            // flag:
+ 334   3            current_connect_status |= 0x80;
+ 335   3            // update system status...
+ 336   3            //regmap10(0x0D) |= (1 << 0); // PD_WORK = 1
+ 337   3            // times:
+ 338   3            g_usbpd_trace[2]++;
+ 339   3            // update de-bounce time:
+ 340   3            SET_SRC_DET_DEBOUNCE(DET_UNPLUG_MS); 
+ 341   3            // notify: 
+ 342   3            usb_pd_add_event(bisr, USBPD_EVT_PORT_CONNECTED); 
+ 343   3            // configure which is cc:
+ 344   3            current_connect_status &= 0xF0;
+ 345   3            if(cc0_valid)
+ 346   3            {
+ 347   4              // set correct cc: 
+ 348   4              regmap0D(0x65) &= ~(1 << 0);
+ 349   4              // flag: important!!!
+ 350   4              current_connect_status |= 0x01;
+ 351   4            }
+ 352   3            else
+ 353   3            {
+ 354   4              // set correct cc:
+ 355   4              regmap0D(0x65) |=  (1 << 0);
+ 356   4              // flag: importart!!!
+ 357   4              current_connect_status |= 0x02; 
+ 358   4            }
+ 359   3          }
+ 360   2        }
+ 361   1        else
+ 362   1        {
+C51 COMPILER V9.56.0.0   USB_PD                                                            07/10/2023 15:49:37 PAGE 7   
+
+ 363   2          ///* we don't need process detach - 2018.11.27
+ 364   2          // detached:
+ 365   2          if(current_connect_status & 0x80)
+ 366   2          {
+ 367   3            // update flag:
+ 368   3            current_connect_status &= 0x7F; 
+ 369   3            // update system status...
+ 370   3            regmap10(0x0D) &= ~(1 << 0); // PD_WORK = 0
+ 371   3            // times:
+ 372   3            g_usbpd_trace[3]++;
+ 373   3            // update de-bounce time:
+ 374   3            SET_SRC_DET_DEBOUNCE(DET_PLUG_MS); 
+ 375   3            // notify:
+ 376   3            usb_pd_add_event(bisr, USBPD_EVT_PORT_DISCONNECTED);
+ 377   3          }
+ 378   2          //*/
+ 379   2        }
+ 380   1      }
+ 381          
+ 382          // disconnect process, which called from isr...just for test...
+ 383          void usb_pd_check_connect(uint8 bisr)
+ 384          {
+ 385   1        // wrap function: 
+ 386   1        _check_cc_src_connection(bisr); 
+ 387   1      }
+ 388          
+ 389          ////////////////////////////////////////////////////////////////////////////////////
+ 390          
+ 391          #if (USB_PD_TEST_EN == YES)
+              // test software algorithm...
+              /* 
+              static uint32 xdata test_value    _at_    (GENMEM_REG_BASE + 0x001C);
+              static _test_algorithm(void)
+              {
+                test_value = 0;
+                test_value = 1UL << 16;
+                test_value = 1UL << 24;
+                SET_V32_BITS(test_value, 0, 0, 1);
+                SET_V32_BITS(test_value, 7, 7, 1);
+                SET_V32_BITS(test_value, 31, 24, 0x55);
+                SET_V32_BITS(test_value, 23, 16, 0xFF);
+                SET_V32_BITS(test_value, 15, 8, 0x55);
+                SET_V32_BITS(test_value, 30, 0, 0); 
+                test_value = 0x55555555;
+              }
+              */
+              // test register read/write...                         
+              ///*
+              static uint8 xdata test_buf[8]    _at_    (GENMEM_REG_BASE + 0x0010); 
+              static _test_register(void)
+              {
+                // test Page0B0C: read only...
+                test_buf[0] = regmap0B(0x01); 
+                test_buf[1] = regmap0C(0x01); 
+                // test Page0D0E0F: write/read...
+                regmap0D(0x01) = 0x11;
+                test_buf[2] = regmap0D(0x01);
+                regmap0E(0x01) = 0x22; 
+                test_buf[3] = regmap0E(0x01);
+                regmap0F(0x01) = 0x33;
+                test_buf[4] = regmap0F(0x01);   
+              }
+C51 COMPILER V9.56.0.0   USB_PD                                                            07/10/2023 15:49:37 PAGE 8   
+
+              //*/
+              void usb_pd_test(void)
+              {
+                // _test_algorithm(); 
+                _test_register();   
+              }
+              #endif 
+ 432          
+ 433          
+ 434          
+ 435          #endif
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    606    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =      5    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----      11
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

@@ -1,0 +1,1 @@
+"src\events\event_tiny.c" OPTIMIZE (8,SIZE) BROWSE INCDIR(./src/include;./src/drivers;./src/lib;./src/modules;./src/events;./src) DEBUG OBJECTEXTEND PRINT(.\objs\event_tiny.lst) TABS (2) OBJECT(.\objs\event_tiny.obj)

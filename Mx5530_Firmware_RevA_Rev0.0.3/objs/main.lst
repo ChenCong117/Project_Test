@@ -1,0 +1,161 @@
+C51 COMPILER V9.56.0.0   MAIN                                                              07/10/2023 15:49:37 PAGE 1   
+
+
+C51 COMPILER V9.56.0.0, COMPILATION OF MODULE MAIN
+OBJECT MODULE PLACED IN .\objs\main.obj
+COMPILER INVOKED BY: D:\Keil\C51\BIN\C51.EXE src\application\main.c OPTIMIZE(8,SIZE) BROWSE INCDIR(./src/include;./src/d
+                    -rivers;./src/lib;./src/modules;./src/events;./src) DEBUG OBJECTEXTEND PRINT(.\objs\main.lst) TABS(2) OBJECT(.\objs\main.
+                    -obj)
+
+line level    source
+
+   1          
+   2          #include "includes.h"
+   3          
+   4          //scheduler:
+   5          #if (IMOD_SCHED_OPEN == YES)
+   6          #include "sched.h"
+   7          #endif
+   8          
+   9          //function modules:
+  10          #if (FMOD_USB_PD_OPEN == YES)
+  11          #include "usb_pd/usbpd/usb_pd.h"
+  12          #endif
+  13          
+  14          //event process:
+  15          #if (IMOD_EVENT_OPEN == YES)
+  16          #include "event.h"
+  17          #endif
+  18          
+  19          //assist modules:
+  20          #if (IMOD_INTERRUPT_OPEN == YES)
+  21          #include "interrupt/interrupt.h"
+  22          #endif
+  23          #if (IMOD_SYSTEM_OPEN == YES)
+  24          #include "system/system.h"
+  25          #endif
+  26          #if (AMOD_SW_DELAY_OPEN == YES)
+  27          #include "sw_delay/sw_delay.h"
+  28          #endif
+  29          
+  30          //init drivers:
+  31          #if (DRV_SW_IIC_OPEN == YES)
+              #include "sw_iic/sw_iic.h"
+              #endif
+  34          #if (DRV_TIMER_OPEN == YES) 
+  35          #include "timer/timer.h"
+  36          #endif
+  37          #if (DRV_TIMER_OPEN == YES)
+  38          #include "timer/timer.h"
+  39          #endif
+  40          #if (DRV_POWER_OPEN == YES)
+  41          #include "power/power.h"
+  42          #endif
+  43          
+  44          //for test:
+  45          #if (TST_ENABLE == YES)
+              extern void test_main(void);
+              #endif
+  48          
+  49          static uint8 xdata MEM_INIT_FLAG  _at_  (GENMEM_REG_BASE + 0x00); // reserved
+  50          static uint8 xdata MCU_OVER_FLAG  _at_  (GENMEM_REG_BASE + 0x01);   // indicator that firmware run over...
+  51          static uint8 xdata FW_VERSION1    _at_  (GENMEM_REG_BASE + 0x02); // firmware version
+  52          static uint8 xdata FW_VERSION2    _at_  (GENMEM_REG_BASE + 0x03);   // reserved
+  53          
+C51 COMPILER V9.56.0.0   MAIN                                                              07/10/2023 15:49:37 PAGE 2   
+
+  54          // Entry...
+  55          int main()
+  56          { 
+  57   1        //version init...
+  58   1        FW_VERSION1 = (SYS_FW_VER >> 8) & 0xFF;
+  59   1        FW_VERSION2 = (SYS_FW_VER >> 0) & 0xFF;
+  60   1      
+  61   1        // event process module eaarlier as some init routine will register event maybe...
+  62   1        #if (IMOD_EVENT_OPEN == YES)
+  63   1        event_initialize();
+  64   1        #endif
+  65   1      
+  66   1        //open interrupt first, as test_main will use interrupt sometimes...
+  67   1        #if (IMOD_INTERRUPT_OPEN == YES)
+  68   1        interrupt_init();  
+  69   1        #endif
+  70   1      
+  71   1        //system init as it affect system status:
+  72   1        #if (IMOD_SYSTEM_OPEN == YES)
+  73   1        system_init();
+  74   1        #endif
+  75   1      
+  76   1        //system clock open as real task is beginning...
+  77   1        #if (DRV_TIMER_OPEN == YES)
+  78   1        timer_init();
+  79   1        #endif
+  80   1      
+  81   1        //As it's test, we could move this to where we want....
+  82   1        #if (TST_ENABLE == YES)
+                test_main(); 
+                #endif
+  85   1      
+  86   1        //we have to init something first...
+  87   1      
+  88   1        //system init: from low-layer to top-layer...
+  89   1        //drivers...
+  90   1        #if (DRV_SW_IIC_OPEN == YES)
+                iic_init();
+                #endif
+  93   1        #if (DRV_POWER_OPEN == YES)
+  94   1        power_init(); 
+  95   1        #endif
+  96   1        //libraries...
+  97   1        //function modules...
+  98   1        #if (FMOD_USB_PD_OPEN == YES)
+  99   1        usb_pd_init();
+ 100   1        #endif
+ 101   1      
+ 102   1        //any necessary operation here...
+ 103   1      
+ 104   1        //use scheduler to enter main loop...
+ 105   1        #if (IMOD_SCHED_OPEN == YES)
+ 106   1        scheduler();
+ 107   1        #endif
+ 108   1      
+ 109   1        //spin forever...
+ 110   1        MCU_OVER_FLAG = 0;  // for avoiding simulation warning...
+ 111   1        while(1)
+ 112   1        {
+ 113   2          MCU_OVER_FLAG++;
+ 114   2        }
+ 115   1        
+C51 COMPILER V9.56.0.0   MAIN                                                              07/10/2023 15:49:37 PAGE 3   
+
+ 116   1        return 0;
+ 117   1      }
+ 118          
+ 119          /*
+ 120          void init_memory(void)
+ 121          {
+ 122            // check memory has been initialized:
+ 123            if(MEM_INIT_FLAG == 0)
+ 124              return;
+ 125          
+ 126            // init memory values to zero:
+ 127            memset(&XBYTE[GENMEM_REG_BASE], 0, 0x20);
+ 128          }
+ 129          */
+ 130          
+ 131          
+*** WARNING C294 IN LINE 116 OF src\application\main.c: unreachable code
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =     43    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  1 WARNING(S),  0 ERROR(S)

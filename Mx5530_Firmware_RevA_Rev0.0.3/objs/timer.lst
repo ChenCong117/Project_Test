@@ -1,0 +1,143 @@
+C51 COMPILER V9.56.0.0   TIMER                                                             07/10/2023 15:49:37 PAGE 1   
+
+
+C51 COMPILER V9.56.0.0, COMPILATION OF MODULE TIMER
+OBJECT MODULE PLACED IN .\objs\timer.obj
+COMPILER INVOKED BY: D:\Keil\C51\BIN\C51.EXE src\drivers\timer\timer.c OPTIMIZE(8,SIZE) BROWSE INCDIR(./src/include;./sr
+                    -c/drivers;./src/lib;./src/modules;./src/events;./src) DEBUG OBJECTEXTEND PRINT(.\objs\timer.lst) TABS(2) OBJECT(.\objs\t
+                    -imer.obj)
+
+line level    source
+
+   1          /**
+   2           * timer driver code.
+   3           * note: timer0 to be the system timer, timer1 to be used by uart, so the timer is only 
+   4           *     mean timer0, eg, timer_isr() is isr for timer0, there's nothing about timer1 here...
+   5           */
+   6          #include "timer.h"
+   7          #include "event.h"
+   8          #include "system/system.h"
+   9          #include "usb_pd/usbpd/usb_pd.h"
+  10          
+  11          #if (DRV_TIMER_OPEN == YES)
+  12          
+  13          // 1ms period: 32-bit value will not overflow...
+  14          uint32 data system_ticks; 
+  15          
+  16          /**
+  17           * time = (0x10000 - init_value) * machine_cycle
+  18           * machine_cycle = clock_cycle * 2 
+  19           * clock_cycle = 1 / clock_freq
+  20           * time = (0x10000 - init_value) * ((1 / clock_freq) * 2)
+  21           * 0x10000 - init_value = time / ((1 / clock_freq) * 2)
+  22           * init_value = 0x10000 - time / (2 / clock_freq)
+  23           * init_value = 0x10000 - time * clock_freq / 2
+  24           */
+  25          //time = 1ms:
+  26          #define RELOAD_VALUE      (0x10000 - (SYS_CLK_MHZ * 500)) 
+  27          
+  28          // reload values(1ms) = 0x10000 - FREQ_OSC / 2 = 65536 - 27000 / 2 = 52036 = 0xCB44
+  29          //#define RELOAD_VAL_L  (0x44 + 0x00)  // maybe need some adjust...
+  30          //#define RELOAD_VAL_H  (0xCB)
+  31          // reload values(1ms) = 0x10000 - 50000 / 2 = 65536 - 25000 = 40536 = 0x9E58
+  32          //#define RELOAD_VAL_L  (0x58 + 0x00) 
+  33          //#define RELOAD_VAL_H  (0x9E)
+  34          
+  35          // timer polling machinism: 
+  36          static uint16 probe_status; 
+  37          static uint32 xdata start_ticks[TP_TYPE_MAX]; 
+  38          void timer_polling_enable(uint8 enable, TMR_POLL_TYPE type)
+  39          {
+  40   1        if(enable)
+  41   1        {
+  42   2          probe_status |=  ((uint16)1 << (uint8)type); 
+  43   2          start_ticks[(uint8)type] = system_ticks - 1; 
+  44   2        }
+  45   1        else
+  46   1        {
+  47   2          probe_status &= ~((uint16)1 << (uint8)type);    
+  48   2        } 
+  49   1      }
+  50          
+  51          static uint8 xdata timer_running_flag   _at_    (GENMEM_REG_BASE + 0x70); 
+  52          void timer_isr(void) interrupt INT_NUM_1_TIMER0
+  53          {
+C51 COMPILER V9.56.0.0   TIMER                                                             07/10/2023 15:49:37 PAGE 2   
+
+  54   1        // reload values:
+  55   1        TR0 = 0;
+  56   1        // we have to check load values:
+  57   1        {
+  58   2          TL0 = (RELOAD_VALUE >> 0) & 0xFF;
+  59   2          TH0 = (RELOAD_VALUE >> 8) & 0xFF; 
+  60   2        }
+  61   1        TR0 = 1;
+  62   1      
+  63   1        // ticks:
+  64   1        system_ticks++;
+  65   1      
+  66   1        // just for debug...
+  67   1        timer_running_flag += 1; 
+  68   1      
+  69   1        // test timer:
+  70   1      
+  71   1        // probe connection status......which should be interrupt???
+  72   1        #if 1
+  73   1        if(probe_status & (1 << TP_USBPD_CONNECTION))
+  74   1        {
+  75   2          if((system_ticks & 0xF) == 0) // 15ms -  every 512ms...
+  76   2          {
+  77   3            // check if disconnected...
+  78   3            usb_pd_check_connect(1); 
+  79   3          }
+  80   2        }
+  81   1        #endif
+  82   1      }
+  83          
+  84          
+  85          void timer_init(void)
+  86          {
+  87   1        // software init:
+  88   1        system_ticks = 0; 
+  89   1        probe_status = 0;
+  90   1      
+  91   1        // put timer0 into 16-bit no prescale (method - 1)
+  92   1        TMOD = (TMOD & 0xF0) | 0x01;  
+  93   1        
+  94   1        // set peroid:
+  95   1        TL0 = (RELOAD_VALUE >> 0) & 0xFF;
+  96   1        TH0 = (RELOAD_VALUE >> 8) & 0xFF;
+  97   1      
+  98   1        // start timer at last:
+  99   1        TR0 = 1;     
+ 100   1      }
+ 101          
+ 102          //////////////////////////////// test function //////////////////////////////////
+ 103          #if (TIMER_TEST_EN == YES)
+              void timer_test(void)
+              {
+                while(1)
+                {
+                }
+              }
+              #endif
+ 111          
+ 112          
+ 113          
+ 114          #endif /* DRV_TIMER_OPEN */
+
+C51 COMPILER V9.56.0.0   TIMER                                                             07/10/2023 15:49:37 PAGE 3   
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    248    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =      4    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =      6    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

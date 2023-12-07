@@ -1,0 +1,64 @@
+2013.01.21
+
+<application> folder:
+
+1. main.c/startup.a51: 入口函数
+
+2. sched.c：调度过程
+
+
+<drivers> folder:
+
+1. timer：时钟驱动
+
+2. iic_master: IIC主机驱动
+
+3. gpio：
+
+4. uart：
+
+
+<events> folder: 实现命令协议及解析
+
+
+<include> folder：通用头文件
+
+
+<lib> folder:
+
+1. debug： 调试库
+
+2. edid：EDID操作，包括解析
+
+3. interrupt：底层中断响应
+
+4. plug_detect：主动侦测信号线连接信息
+
+5. scaler：Scaling模块库
+
+6. system：基础系统接口库
+
+
+<modules> folder: 各个功能模块库
+
+
+<osd> folder: OSD模块库
+
+
+<test> folder: 测试用，不作为最终代码使用
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

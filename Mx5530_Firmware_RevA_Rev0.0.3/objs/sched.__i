@@ -1,0 +1,1 @@
+"src\application\sched.c" OPTIMIZE (8,SIZE) BROWSE INCDIR(./src/include;./src/drivers;./src/lib;./src/modules;./src/events;./src) DEBUG OBJECTEXTEND PRINT(.\objs\sched.lst) TABS (2) OBJECT(.\objs\sched.obj)

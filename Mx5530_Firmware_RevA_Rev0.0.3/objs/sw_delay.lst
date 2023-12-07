@@ -1,0 +1,156 @@
+C51 COMPILER V9.56.0.0   SW_DELAY                                                          07/10/2023 15:49:37 PAGE 1   
+
+
+C51 COMPILER V9.56.0.0, COMPILATION OF MODULE SW_DELAY
+OBJECT MODULE PLACED IN .\objs\sw_delay.obj
+COMPILER INVOKED BY: D:\Keil\C51\BIN\C51.EXE src\lib\sw_delay\sw_delay.c OPTIMIZE(8,SIZE) BROWSE INCDIR(./src/include;./
+                    -src/drivers;./src/lib;./src/modules;./src/events;./src) DEBUG OBJECTEXTEND PRINT(.\objs\sw_delay.lst) TABS(2) OBJECT(.\o
+                    -bjs\sw_delay.obj)
+
+line level    source
+
+   1          
+   2          #include "sw_delay.h"
+   3          
+   4          /*1-3
+   5          **usÑÓÊ±Ô­Àí: LCALL(2c) + Mov R7, #DELAY_xUS(1c) + DJNZ R7,ret(DELAY_xUS*2c) + RET(2c), 1c = 1/13.5 us
+   6          **ÏÞÖÆ: DELAY_xUS shall be smaller than 255
+   7          **Õû¸ö¹ý³ÌÊÇ²Î¿¼¶ÔÓ¦µÄ»ã±à´úÂëµÄ·ÖÎöµÃ³öµÄ, ±ØÐëÕâÃ´Ð´²ÅÄÜµÃµ½×î¶Ì,×îÇåÎúµÄÖ¸ÁîÊ±Ðò 
+   8          */
+   9          
+  10          #if (SW_DELAY_1US_EN == YES)
+              /*1. drv_sw_delay_1us: software delay 1us (ÊÜÏÞÓÚÏµÍ³Ê±ÖÓÆµÂÊ,´óÔ¼Ö»ÄÜ¾«È·µ½0.96us) 
+              @No param
+              @No return
+              */
+              void sw_delay_1us(void)
+              {
+                uint8 r = 4;
+              
+                while (--r);  
+              }
+              #endif 
+  22          #if (SW_DELAY_2US_EN == YES)
+              /*2. drv_sw_delay_2us: software delay 2us 
+              @No param
+              @No return
+              */
+              void sw_delay_2us(void)
+              {
+                uint8 r = 11;
+                
+                while (--r);  
+              }
+              #endif
+  34          #if (SW_DELAY_10US_EN == YES)
+  35          /*3. drv_sw_delay_10us: software delay 10us 
+  36          @No param
+  37          @No return
+  38          */
+  39          void sw_delay_10us(void)
+  40          {
+  41   1        uint8 r = 65;
+  42   1        
+  43   1        while (--r);  
+  44   1      }
+  45          #endif
+  46          #if (SW_DELAY_100US_EN == YES)  
+  47          /*4. drv_sw_delay_100us: software delay 100us 
+  48          @No param
+  49          @No return
+  50          @Ô­Àí: LCALL(2c) + MOV(1c) + 20*(32*2c+3c)+ 5*NOP(5c) + RET(2c) = 1350c, 1c = 1/13.5 us (¿ÉÒÔÓÐ±ðµÄ¹«Ê½, Î
+             -ÒÖ»Ïëµ½Õâ¸ö, ¿ÉÄÜ²»ÊÇ×îÓÅ»¯µÄ)
+  51          */
+  52          void sw_delay_100us(void)
+C51 COMPILER V9.56.0.0   SW_DELAY                                                          07/10/2023 15:49:37 PAGE 2   
+
+  53          {
+  54   1        uint8 r1, r2; 
+  55   1      
+  56   1        for (r1=20; r1>0; --r1)
+  57   1          for (r2=32; r2>0; --r2)
+  58   1            ;
+  59   1      
+  60   1        _nop_();
+  61   1        _nop_();
+  62   1        _nop_();
+  63   1        _nop_();
+  64   1        _nop_();
+  65   1      }
+  66          #endif
+  67          #if (SW_DELAY_1MS_EN == YES)
+  68          /*5. drv_sw_delay_1ms: software delay 1ms 
+  69          @No param
+  70          @No return
+  71          @Ô­Àí: LCALL(2c) + MOV(1c) + 78*(85*2c+3c)+ 1*NOP(1c) + RET(2c) = 13500c, 1c = 1/13.5 us (¿ÉÒÔÓÐ±ðµÄ¹«Ê½, 
+             -ÎÒÖ»Ïëµ½Õâ¸ö, ¿ÉÄÜ²»ÊÇ×îÓÅ»¯µÄ)
+  72          */
+  73          void sw_delay_1ms(void)
+  74          {
+  75   1        uint8_t r1, r2;
+  76   1        
+  77   1        for (r1=78; r1>0; --r1)
+  78   1          for (r2=85; r2>0; --r2)
+  79   1            ;
+  80   1      
+  81   1        _nop_();
+  82   1      }
+  83          #endif 
+  84          #if (SW_DELAY_10MS_EN == YES)
+  85          /*6. drv_sw_delay_10ms: software delay 10ms 
+  86          @No param
+  87          @No return
+  88          @Ô­Àí: LCALL(2c) + MOV(1c) + 4*((197*2c+3c)*85+3c)+ 3*NOP(1c) + RET(2c) = 135000c, 1c = 1/13.5 us (¿ÉÒÔÓÐ±
+             -ðµÄ¹«Ê½, ÎÒÖ»Ïëµ½Õâ¸ö, ¿ÉÄÜ²»ÊÇ×îÓÅ»¯µÄ)
+  89          */
+  90          void sw_delay_10ms(void)
+  91          {
+  92   1        uint8_t r1, r2, r3;
+  93   1        
+  94   1        for (r1=4; r1>0; --r1)
+  95   1          for (r2=85; r2>0; --r2)
+  96   1            for (r3=197; r3>0; --r3)
+  97   1              ;
+  98   1      
+  99   1        _nop_();
+ 100   1        _nop_();
+ 101   1        _nop_();
+ 102   1      }
+ 103          #endif
+ 104          #if (SW_DELAY_100MS_EN == YES)
+ 105          /*7. drv_sw_delay_100ms: software delay 100ms 
+ 106          @No param
+ 107          @No return
+ 108          @Ô­Àí: LCALL(2c) + MOV(1c) + 14*((236*2c+3c)*203+3c)+ 3*NOP(1c) + RET(2c) = 1350000c, 1c = 1/13.5 us (¿ÉÒÔ
+             -ÓÐ±ðµÄ¹«Ê½, ÎÒÖ»Ïëµ½Õâ¸ö, ¿ÉÄÜ²»ÊÇ×îÓÅ»¯µÄ)
+ 109          */
+ 110          void sw_delay_100ms(void)
+ 111          {
+C51 COMPILER V9.56.0.0   SW_DELAY                                                          07/10/2023 15:49:37 PAGE 3   
+
+ 112   1        uint8_t r1, r2, r3;
+ 113   1        
+ 114   1        for (r1=14; r1>0; --r1)
+ 115   1          for (r2=203; r2>0; --r2)
+ 116   1            for (r3=236; r3>0; --r3)
+ 117   1              ;
+ 118   1      
+ 119   1        _nop_();
+ 120   1        _nop_();
+ 121   1        _nop_();
+ 122   1      }
+ 123          #endif
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =     61    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)
